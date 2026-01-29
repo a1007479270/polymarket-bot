@@ -6,7 +6,7 @@
 //! - Position sizing based on volatility regime
 
 use chrono::{DateTime, Duration, Utc};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use std::collections::{HashMap, VecDeque};
 

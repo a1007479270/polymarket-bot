@@ -8,6 +8,7 @@
 //! 5. Confidence in the edge estimate
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::collections::VecDeque;
 use std::sync::RwLock;
@@ -186,12 +187,15 @@ impl DynamicKelly {
 
         // 9. Calculate final position size
         let position_size = full_kelly * fraction;
+        
+        // Build reasoning before moving adjustments
+        let reasoning = self.build_reasoning(&adjustments);
 
         KellyResult {
             position_size,
             effective_fraction: fraction,
             adjustments,
-            reasoning: self.build_reasoning(&adjustments),
+            reasoning,
         }
     }
 
@@ -262,6 +266,7 @@ impl DynamicKelly {
         
         vol_ratio
             .sqrt()
+            .unwrap_or(dec!(1.0))
             .max(dec!(0.5))  // Don't reduce more than 50%
             .min(dec!(1.5))  // Don't increase more than 50%
     }

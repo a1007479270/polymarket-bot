@@ -465,15 +465,18 @@ impl ArbitrageDetector {
 
     /// Simple word-based question similarity
     fn question_similarity(&self, q1: &str, q2: &str) -> Decimal {
-        let words1: std::collections::HashSet<_> = q1
-            .to_lowercase()
+        let q1_lower = q1.to_lowercase();
+        let q2_lower = q2.to_lowercase();
+        
+        let words1: std::collections::HashSet<String> = q1_lower
             .split_whitespace()
             .filter(|w| w.len() > 2)
+            .map(|s| s.to_string())
             .collect();
-        let words2: std::collections::HashSet<_> = q2
-            .to_lowercase()
+        let words2: std::collections::HashSet<String> = q2_lower
             .split_whitespace()
             .filter(|w| w.len() > 2)
+            .map(|s| s.to_string())
             .collect();
 
         if words1.is_empty() || words2.is_empty() {
@@ -487,7 +490,7 @@ impl ArbitrageDetector {
             return Decimal::ZERO;
         }
 
-        Decimal::from(intersection) / Decimal::from(union)
+        Decimal::from(intersection as u32) / Decimal::from(union as u32)
     }
 
     /// Get summary of current opportunities
