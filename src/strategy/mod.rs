@@ -12,6 +12,7 @@ pub mod dynamic_kelly;
 pub mod enhanced_filter;
 pub mod arbitrage;
 pub mod volatility_adaptive;
+pub mod signal_aggregator;
 
 #[cfg(test)]
 mod tests;
@@ -28,6 +29,7 @@ pub use dynamic_kelly::{DynamicKelly, DynamicKellyConfig, KellyResult, KellyStat
 pub use enhanced_filter::{EnhancedSignalFilter, EnhancedFilterConfig, SignalCandidate, FilterDecision, CategoryStats, PositionDirection};
 pub use arbitrage::{ArbitrageDetector, ArbitrageOpportunity, ArbitrageConfig, ArbitrageType, MarketData as ArbMarketData};
 pub use volatility_adaptive::{VolatilityAdaptiveExits, VolatilityTracker, VolatilityRegime, AdaptiveParams, AtrTrailingStop};
+pub use signal_aggregator::{SignalAggregator, AggregatedDecision, SignalSource, SignalType, SignalDirection, AggregatorConfig, SignalBuilder};
 
 use crate::config::{RiskConfig, StrategyConfig};
 use crate::model::Prediction;
