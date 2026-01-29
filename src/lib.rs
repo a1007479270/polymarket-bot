@@ -31,6 +31,7 @@ pub mod portfolio;
 pub mod regime;
 pub mod risk;
 pub mod sentiment;
+pub mod signal_decay;
 pub mod storage;
 pub mod strategy;
 pub mod telegram;
