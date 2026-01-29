@@ -6,7 +6,6 @@ mod tests {
     use super::super::processor::SignalProcessor;
     use crate::config::LlmConfig;
     use chrono::Utc;
-    use rust_decimal_macros::dec;
 
     fn create_llm_config() -> LlmConfig {
         LlmConfig {

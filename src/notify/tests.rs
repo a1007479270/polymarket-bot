@@ -6,7 +6,6 @@ mod tests {
     use crate::types::{Signal, Side, Trade};
     use crate::monitor::PerformanceStats;
     use chrono::Utc;
-    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     #[test]

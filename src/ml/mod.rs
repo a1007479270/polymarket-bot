@@ -17,4 +17,4 @@ mod tests;
 pub use features::{FeatureExtractor, MarketFeatures, FeatureConfig};
 pub use calibration::{ProbabilityCalibrator, CalibrationMethod, CalibrationResult};
 pub use ensemble::{EnsemblePredictor, ModelPrediction, EnsembleConfig, EnsembleMethod};
-pub use factors::{MultiFactorFusion, Factor, FactorWeight, FusionConfig, FusionResult};
+pub use factors::{MultiFactorFusion, Factor, FactorWeight, FusionConfig, FusionResult, FactorCategory};

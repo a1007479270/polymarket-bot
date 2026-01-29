@@ -3,7 +3,6 @@
 #[cfg(test)]
 mod tests {
     use super::super::config::*;
-    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     #[test]

@@ -4,13 +4,13 @@
 mod tests {
     use crate::config::{
         Config, PolymarketConfig, StrategyConfig, RiskConfig, DatabaseConfig,
-        LlmConfig, TelegramConfig, CopyTradeConfig, IngesterConfig,
+        LlmConfig, TelegramConfig, CopyTradeConfig,
     };
     use crate::types::{Market, Outcome, Signal, Side, Order, OrderType, Trade, Position, OrderStatus};
     use crate::model::Prediction;
     use crate::strategy::SignalGenerator;
     use crate::analysis::{TradeAnalyzer, TradeRecord, TradeOutcome, TradingPattern};
-    use crate::monitor::{Monitor, PerformanceStats};
+    use crate::monitor::Monitor;
     use crate::telegram::BotState;
     use chrono::Utc;
     use rust_decimal::Decimal;

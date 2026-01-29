@@ -4,7 +4,6 @@
 mod tests {
     use super::super::*;
     use chrono::Utc;
-    use std::collections::HashMap;
 
     #[test]
     fn test_raw_signal_creation() {

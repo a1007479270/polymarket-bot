@@ -4,7 +4,6 @@
 mod tests {
     use super::super::copy_trade::*;
     use chrono::Utc;
-    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     #[test]
