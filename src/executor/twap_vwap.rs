@@ -233,7 +233,7 @@ impl ExecutionEngine {
     /// Generate TWAP slices (even distribution)
     fn generate_twap_slices(&mut self) {
         let duration_secs = self.config.duration.as_secs_f64();
-        let slice_interval = duration_secs / self.config.num_slices as f64;
+        let _slice_interval = duration_secs / self.config.num_slices as f64;
 
         // Calculate base quantity per slice
         let base_quantity = self.total_quantity / Decimal::from(self.config.num_slices);

@@ -175,7 +175,7 @@ impl SentimentEngine {
     }
 
     /// Calculate sentiment trend over recent history
-    async fn calculate_trend(&self, symbol: &str, current: f64) -> f64 {
+    async fn calculate_trend(&self, symbol: &str, _current: f64) -> f64 {
         let history = self.history.read().await;
         if history.len() < 3 {
             return 0.0;

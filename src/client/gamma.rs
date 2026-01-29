@@ -4,11 +4,9 @@
 
 use crate::error::{BotError, Result};
 use crate::types::{Market, Outcome};
-use chrono::{DateTime, Utc};
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use std::collections::HashSet;
 use tracing::debug;
 
 /// Known crypto series IDs
