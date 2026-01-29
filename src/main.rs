@@ -23,6 +23,7 @@ use polymarket_bot::{
         copy_trade::{CopyTrader, TopTrader},
         crypto_hf::{CryptoHfStrategy, CryptoPriceTracker},
         realtime::{RealtimeEngine, start_binance_feed},
+        signal_filter::SignalFilter,
     },
     telegram::{TelegramBot, CommandHandler, BotCommand},
 };
@@ -167,6 +168,8 @@ async fn run_bot(config: Config, dry_run: bool) -> anyhow::Result<()> {
     let signal_gen = SignalGenerator::new(config.strategy.clone(), config.risk.clone());
     let crypto_strategy = CryptoHfStrategy::default();
     let mut crypto_tracker = CryptoPriceTracker::new();
+    let signal_filter = SignalFilter::new();
+    tracing::info!("Signal filter initialized (15-min dedup, fusion required)");
     
     // Initialize crypto price history from Binance klines
     if let Err(e) = crypto_tracker.init_history().await {
@@ -550,6 +553,15 @@ async fn run_bot(config: Config, dry_run: bool) -> anyhow::Result<()> {
             };
 
             if let Some(signal) = signal {
+                // Apply signal filter (deduplication + fusion)
+                if !signal_filter.deduplicator.can_trade(&market.id) {
+                    tracing::debug!("Skipping {} - already traded recently", market.id);
+                    continue;
+                }
+                
+                // Mark as traded to prevent duplicates
+                signal_filter.deduplicator.mark_traded(&market.id);
+                
                 tracing::info!(
                     "Signal: {} {} | Model: {:.1}% vs Market: {:.1}% | Edge: {:.1}%",
                     match signal.side {
