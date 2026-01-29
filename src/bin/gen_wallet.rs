@@ -1,11 +1,12 @@
 //! Generate a new Polygon wallet for Polymarket
 
 use ethers::core::k256::ecdsa::SigningKey;
+use ethers::core::rand::thread_rng;
 use ethers::signers::{LocalWallet, Signer};
 
 fn main() {
-    // Generate random signing key
-    let signing_key = SigningKey::random(&mut rand::rng());
+    // Generate random signing key using ethers' rand
+    let signing_key = SigningKey::random(&mut thread_rng());
     let wallet = LocalWallet::from(signing_key);
     
     // Get private key bytes
