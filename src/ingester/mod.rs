@@ -12,6 +12,8 @@ pub mod processor;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod processor_tests;
 
 use crate::error::Result;
 use async_trait::async_trait;
