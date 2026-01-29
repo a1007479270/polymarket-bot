@@ -29,6 +29,7 @@ const MIN_EDGE: f64 = 0.03; // 3%
 const MAX_POSITION_PCT: f64 = 0.05; // 5% of capital
 const MAX_TRADES_PER_HOUR: u32 = 5;
 const MIN_LIQUIDITY: f64 = 5000.0; // $5k minimum liquidity
+const MAX_SETTLEMENT_MINUTES: i64 = 30; // Only trade markets settling within 30 mins
 
 /// Trade record for logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -411,6 +412,26 @@ impl LiveTrader {
             let mut opportunities: Vec<(Market, String, f64, f64, BinanceContext)> = Vec::new();
 
             for market in &markets {
+                // Skip markets not settling soon (within MAX_SETTLEMENT_MINUTES)
+                if let Some(end_date) = market.end_date {
+                    let now = Utc::now();
+                    let time_to_settlement = end_date - now;
+                    let mins_to_settlement = time_to_settlement.num_minutes();
+                    
+                    // Skip if already expired or too far in the future
+                    if mins_to_settlement < 0 || mins_to_settlement > MAX_SETTLEMENT_MINUTES {
+                        debug!(
+                            "Skipping {} - settles in {} mins (max: {})",
+                            market.question, mins_to_settlement, MAX_SETTLEMENT_MINUTES
+                        );
+                        continue;
+                    }
+                } else {
+                    // No end_date means we can't verify settlement time, skip
+                    debug!("Skipping {} - no end_date", market.question);
+                    continue;
+                }
+
                 // Skip low liquidity
                 let liq: f64 = market.liquidity.to_string().parse().unwrap_or(0.0);
                 if liq < MIN_LIQUIDITY {

@@ -4,6 +4,7 @@
 
 use crate::error::{BotError, Result};
 use crate::types::{Market, Outcome};
+use chrono::{DateTime, Utc};
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -222,13 +223,25 @@ impl GammaClient {
                 }
             };
 
-            // Get active, non-closed events
-            let active_events: Vec<_> = series
+            // Get active, non-closed events, sorted by soonest end_date
+            let now = Utc::now();
+            let mut active_events: Vec<_> = series
                 .events
                 .into_iter()
                 .filter(|e| e.active && !e.closed)
-                .take(5) // Limit to 5 most recent events per series
+                .filter(|e| {
+                    // Only include events that end in the future
+                    e.end_date.map(|d| d > now).unwrap_or(false)
+                })
                 .collect();
+            
+            // Sort by end_date (soonest first)
+            active_events.sort_by(|a, b| {
+                a.end_date.cmp(&b.end_date)
+            });
+            
+            // Take 10 soonest events per series
+            let active_events: Vec<_> = active_events.into_iter().take(10).collect();
 
             for event in active_events {
                 // Fetch full event data with markets
@@ -371,6 +384,8 @@ struct SeriesEvent {
     title: String,
     active: bool,
     closed: bool,
+    #[serde(rename = "endDate")]
+    end_date: Option<DateTime<Utc>>,
 }
 
 /// Response structure for event endpoint
