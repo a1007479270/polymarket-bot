@@ -62,3 +62,7 @@ toml = "0.8"
 [[bin]]
 name = "polymarket-bot"
 path = "src/main.rs"
+
+[[bin]]
+name = "dry_run_1000"
+path = "src/bin/dry_run_1000.rs"

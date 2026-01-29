@@ -80,7 +80,16 @@ pub struct DryRunSimulator {
 
 impl DryRunSimulator {
     pub fn new(initial_balance: Decimal) -> Self {
-        let strategy_config = StrategyConfig::default();
+        // Use relaxed config for simulation to generate more trades
+        let strategy_config = StrategyConfig {
+            min_edge: dec!(0.02),        // 2% edge (lower for testing)
+            min_confidence: dec!(0.50),  // 50% confidence
+            kelly_fraction: dec!(0.35),  // 35% Kelly
+            scan_interval_secs: 180,
+            model_update_interval_secs: 900,
+            compound_enabled: true,
+            compound_sqrt_scaling: true,
+        };
         let risk_config = RiskConfig::default();
         
         Self {
@@ -111,28 +120,42 @@ impl DryRunSimulator {
         let markets = self.gamma.get_top_markets(20).await?;
         let balance = self.clob.get_balance().await?;
         
+        if markets.is_empty() {
+            tracing::debug!("No markets available");
+        }
+        
         for market in &markets {
             // Skip low liquidity
             if market.liquidity < dec!(1000) {
+                tracing::debug!("Skipping {} - low liquidity: {}", market.id, market.liquidity);
                 continue;
             }
 
             // Generate mock prediction (simplified)
-            let _market_prob = market.yes_price().unwrap_or(dec!(0.5));
+            let market_prob = market.yes_price().unwrap_or(dec!(0.5));
             let model_prob = self.generate_mock_prediction(&market);
+            let edge = (model_prob - market_prob).abs();
+            
+            tracing::debug!(
+                "Market {}: market_prob={}, model_prob={}, edge={}",
+                market.id, market_prob, model_prob, edge
+            );
             
             // Create mock prediction
             let prediction = crate::model::Prediction {
                 probability: model_prob,
-                confidence: dec!(0.75),
+                confidence: dec!(0.80),  // High confidence
                 reasoning: "Dry run simulation".to_string(),
             };
 
             // Generate signal
             if let Some(signal) = self.signal_gen.generate(&market, &prediction) {
+                tracing::debug!("Signal generated for {}: {:?}", market.id, signal.side);
                 if let Some(trade) = self.execute_simulated_trade(&signal, &market, balance).await? {
                     new_trades.push(trade);
                 }
+            } else {
+                tracing::debug!("No signal for {}", market.id);
             }
         }
 
@@ -173,9 +196,12 @@ impl DryRunSimulator {
                 self.trade_counter += 1;
                 
                 // Simulate exit (random profit/loss based on edge)
+                use rand::Rng;
+                let mut rng = rand::thread_rng();
                 let edge_factor = signal.edge;
-                let random_factor = self.pseudo_random() - dec!(0.5);
-                let exit_prob = signal.market_probability + edge_factor + (random_factor * dec!(0.1));
+                let random_val: f64 = rng.gen_range(-0.05..0.05);
+                let random_factor = Decimal::from_f64_retain(random_val).unwrap_or(dec!(0));
+                let exit_prob = signal.market_probability + edge_factor + random_factor;
                 let exit_prob = exit_prob.max(dec!(0.01)).min(dec!(0.99));
                 
                 let pnl_pct = match signal.side {
@@ -213,18 +239,15 @@ impl DryRunSimulator {
         }
     }
 
-    /// Generate mock model prediction
+    /// Generate mock model prediction with real randomness
     fn generate_mock_prediction(&self, market: &Market) -> Decimal {
+        use rand::Rng;
         let base = market.yes_price().unwrap_or(dec!(0.5));
-        // Add some variance to simulate model disagreement
-        let variance = self.pseudo_random() * dec!(0.15) - dec!(0.075);
+        // Add variance to simulate model disagreement (±15% range)
+        let mut rng = rand::thread_rng();
+        let random_val: f64 = rng.gen_range(-0.15..0.15);
+        let variance = Decimal::from_f64_retain(random_val).unwrap_or(dec!(0));
         (base + variance).max(dec!(0.05)).min(dec!(0.95))
-    }
-
-    /// Simple pseudo-random for deterministic testing
-    fn pseudo_random(&self) -> Decimal {
-        let seed = (self.trade_counter as i64 * 1103515245 + 12345) % (1 << 31);
-        Decimal::new(seed % 100, 2)
     }
 
     /// Run simulation for specified duration (simulated time)
