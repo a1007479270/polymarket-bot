@@ -21,25 +21,103 @@ pub struct Position {
     pub entry_time: DateTime<Utc>,
 }
 
-/// Take-profit manager
+/// Take-profit manager with dynamic adjustment
 pub struct TakeProfitManager {
     /// Active positions
     positions: HashMap<String, Position>,
-    /// Take-profit threshold (e.g., 0.05 = 5% profit)
-    take_profit_pct: Decimal,
-    /// Stop-loss threshold (e.g., 0.10 = 10% loss)  
-    stop_loss_pct: Decimal,
+    /// Base take-profit threshold
+    base_take_profit: Decimal,
+    /// Base stop-loss threshold  
+    base_stop_loss: Decimal,
     /// Max hold time before forced exit (hours)
     max_hold_hours: u32,
+    /// Highest price seen (for trailing stop)
+    high_water_marks: HashMap<String, Decimal>,
+    /// Consecutive wins/losses for dynamic adjustment
+    recent_wins: i32,
 }
 
 impl TakeProfitManager {
     pub fn new() -> Self {
         Self {
             positions: HashMap::new(),
-            take_profit_pct: dec!(0.08),  // 8% profit target
-            stop_loss_pct: dec!(0.15),    // 15% stop loss
-            max_hold_hours: 4,            // Exit after 4 hours max
+            base_take_profit: dec!(0.06),  // 6% base profit target
+            base_stop_loss: dec!(0.10),    // 10% base stop loss
+            max_hold_hours: 4,
+            high_water_marks: HashMap::new(),
+            recent_wins: 0,
+        }
+    }
+
+    /// Dynamic take-profit based on conditions
+    fn dynamic_take_profit(&self, position: &Position, current_price: Decimal) -> Decimal {
+        let hold_mins = (Utc::now() - position.entry_time).num_minutes();
+        let edge = position.entry_price; // simplified
+        
+        // More aggressive take-profit if:
+        // 1. Held for a while - take smaller profits
+        // 2. On a winning streak - let it ride a bit more
+        // 3. Small edge - take profit faster
+        
+        let mut tp = self.base_take_profit;
+        
+        // Time decay: lower target over time
+        if hold_mins > 30 {
+            tp = tp * dec!(0.8); // 20% lower target after 30 min
+        }
+        if hold_mins > 60 {
+            tp = tp * dec!(0.7); // Even lower after 1 hour
+        }
+        
+        // Winning streak: slightly higher target
+        if self.recent_wins > 2 {
+            tp = tp * dec!(1.15);
+        }
+        
+        tp.max(dec!(0.03)) // Minimum 3% target
+    }
+
+    /// Dynamic stop-loss with trailing
+    fn dynamic_stop_loss(&self, position: &Position, current_price: Decimal) -> Decimal {
+        let market_id = &position.market_id;
+        
+        // Trailing stop: move stop-loss up as price rises
+        let high = self.high_water_marks.get(market_id)
+            .copied()
+            .unwrap_or(position.entry_price);
+        
+        let profit_from_entry = (current_price - position.entry_price) / position.entry_price;
+        
+        // If we're up, tighten stop-loss
+        if profit_from_entry > dec!(0.03) {
+            // In profit: trail at 50% of gains
+            let trail_stop = high * dec!(0.95); // 5% below high
+            return (current_price - trail_stop) / current_price;
+        }
+        
+        // Losing streak: tighter stop
+        if self.recent_wins < -2 {
+            return self.base_stop_loss * dec!(0.7); // 30% tighter
+        }
+        
+        self.base_stop_loss
+    }
+
+    /// Update high water mark
+    pub fn update_price(&mut self, market_id: &str, price: Decimal) {
+        let high = self.high_water_marks.entry(market_id.to_string())
+            .or_insert(price);
+        if price > *high {
+            *high = price;
+        }
+    }
+
+    /// Record a win/loss for dynamic adjustment
+    pub fn record_result(&mut self, won: bool) {
+        if won {
+            self.recent_wins = (self.recent_wins + 1).min(5);
+        } else {
+            self.recent_wins = (self.recent_wins - 1).max(-5);
         }
     }
 
@@ -60,7 +138,7 @@ impl TakeProfitManager {
         self.positions.insert(signal.market_id.clone(), position);
     }
 
-    /// Check if we should exit a position
+    /// Check if we should exit a position (dynamic)
     pub fn check_exit(&self, market_id: &str, current_price: Decimal) -> Option<ExitSignal> {
         let position = self.positions.get(market_id)?;
         
@@ -70,11 +148,17 @@ impl TakeProfitManager {
         };
         
         let hold_hours = (Utc::now() - position.entry_time).num_hours() as u32;
+        let hold_mins = (Utc::now() - position.entry_time).num_minutes();
+        
+        // Dynamic thresholds
+        let take_profit_threshold = self.dynamic_take_profit(position, current_price);
+        let stop_loss_threshold = self.dynamic_stop_loss(position, current_price);
         
         // Take profit
-        if pnl_pct >= self.take_profit_pct {
-            info!("💰 TAKE PROFIT: {} +{:.1}% @ {:.1}%", 
-                market_id, pnl_pct * dec!(100), current_price * dec!(100));
+        if pnl_pct >= take_profit_threshold {
+            info!("💰 TAKE PROFIT: {} +{:.1}% @ {:.1}% (target was {:.1}%)", 
+                market_id, pnl_pct * dec!(100), current_price * dec!(100), 
+                take_profit_threshold * dec!(100));
             return Some(ExitSignal {
                 market_id: market_id.to_string(),
                 token_id: position.token_id.clone(),
@@ -84,10 +168,11 @@ impl TakeProfitManager {
             });
         }
         
-        // Stop loss
-        if pnl_pct <= -self.stop_loss_pct {
-            info!("🛑 STOP LOSS: {} {:.1}% @ {:.1}%", 
-                market_id, pnl_pct * dec!(100), current_price * dec!(100));
+        // Stop loss (dynamic)
+        if pnl_pct <= -stop_loss_threshold {
+            info!("🛑 STOP LOSS: {} {:.1}% @ {:.1}% (limit was {:.1}%)", 
+                market_id, pnl_pct * dec!(100), current_price * dec!(100),
+                stop_loss_threshold * dec!(100));
             return Some(ExitSignal {
                 market_id: market_id.to_string(),
                 token_id: position.token_id.clone(),
@@ -97,7 +182,20 @@ impl TakeProfitManager {
             });
         }
         
-        // Time-based exit
+        // Break-even exit after long hold with small profit
+        if hold_mins > 90 && pnl_pct > dec!(0.01) && pnl_pct < dec!(0.03) {
+            info!("⏰ BREAK-EVEN EXIT: {} +{:.1}% after {}min", 
+                market_id, pnl_pct * dec!(100), hold_mins);
+            return Some(ExitSignal {
+                market_id: market_id.to_string(),
+                token_id: position.token_id.clone(),
+                reason: ExitReason::TimeLimit,
+                pnl_pct,
+                size: position.size,
+            });
+        }
+        
+        // Force exit after max hold time
         if hold_hours >= self.max_hold_hours {
             info!("⏰ TIME EXIT: {} held {}h, pnl {:.1}%", 
                 market_id, hold_hours, pnl_pct * dec!(100));
