@@ -13,6 +13,7 @@
 //! ```
 
 pub mod analysis;
+pub mod arbitrage;
 pub mod backtest;
 pub mod client;
 pub mod config;
