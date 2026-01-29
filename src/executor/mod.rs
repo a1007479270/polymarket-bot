@@ -1,5 +1,8 @@
 //! Trade execution and risk management
 
+#[cfg(test)]
+mod tests;
+
 use crate::client::ClobClient;
 use crate::config::RiskConfig;
 use crate::error::{BotError, Result};
