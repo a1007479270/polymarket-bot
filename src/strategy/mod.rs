@@ -6,6 +6,8 @@ pub mod crypto_hf;
 pub mod signal_filter;
 pub mod trend_detector;
 pub mod backtest;
+pub mod market_quality;
+pub mod daily_risk;
 
 #[cfg(test)]
 mod tests;
@@ -16,6 +18,8 @@ mod copy_trade_tests;
 
 pub use compound::CompoundStrategy;
 pub use copy_trade::{CopyTrader, CopySignal, TopTrader, CopyTradeConfig};
+pub use market_quality::{MarketQualityScorer, MarketQuality, MarketMetrics, QualityAssessment, QualityScorerConfig};
+pub use daily_risk::{DailyRiskLimiter, DailyRiskConfig, RiskState, RiskCheckResult, RiskBudget};
 
 use crate::config::{RiskConfig, StrategyConfig};
 use crate::model::Prediction;
