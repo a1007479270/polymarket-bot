@@ -5,7 +5,7 @@
 //! - Data validation (schema, bounds, consistency)
 //! - Outlier filtering
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
@@ -419,7 +419,7 @@ pub fn filter_outliers(prices: &[Decimal], config: &CleaningConfig) -> Vec<Decim
 
 /// Validate required fields in a data structure
 pub fn validate_required_fields<T: std::fmt::Debug>(
-    data: &T,
+    _data: &T,
     checks: &[(&str, bool)],
 ) -> ValidationResult {
     let mut anomalies = Vec::new();

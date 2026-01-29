@@ -6,12 +6,12 @@
 //! - Performance attribution
 //! - Edge case handling
 
-use crate::client::mock::{MockClobClient, MockGammaClient, ClobClientTrait, GammaClientTrait};
+use crate::client::mock::{MockClobClient, MockGammaClient, GammaClientTrait};
 use crate::config::{RiskConfig, StrategyConfig};
 use crate::strategy::{SignalGenerator, DynamicKelly, DynamicKellyConfig};
 use crate::types::{Market, Side};
 use crate::model::Prediction;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Serialize, Deserialize};

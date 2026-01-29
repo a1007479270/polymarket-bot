@@ -4,7 +4,6 @@
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::collections::VecDeque;
 
 /// 趋势方向
 #[derive(Debug, Clone, Copy, PartialEq)]

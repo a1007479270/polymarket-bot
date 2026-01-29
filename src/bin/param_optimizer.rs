@@ -204,10 +204,10 @@ async fn main() -> anyhow::Result<()> {
     let markets = generate_test_markets();
     
     // Define parameter ranges
-    let min_edges = [dec!(0.02), dec!(0.03), dec!(0.04), dec!(0.05)];
-    let min_confidences = [dec!(0.55), dec!(0.60), dec!(0.65), dec!(0.70)];
-    let kelly_fractions = [dec!(0.15), dec!(0.20), dec!(0.25)];
-    let max_position_pcts = [dec!(0.02), dec!(0.03), dec!(0.04)];
+    let _min_edges = [dec!(0.02), dec!(0.03), dec!(0.04), dec!(0.05)];
+    let _min_confidences = [dec!(0.55), dec!(0.60), dec!(0.65), dec!(0.70)];
+    let _kelly_fractions = [dec!(0.15), dec!(0.20), dec!(0.25)];
+    let _max_position_pcts = [dec!(0.02), dec!(0.03), dec!(0.04)];
     
     // Generate strategic parameter combinations (not full grid - too expensive)
     // Focus on promising combinations based on domain knowledge

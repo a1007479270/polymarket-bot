@@ -304,7 +304,7 @@ impl SlippagePredictor {
     }
 
     /// Get historical adjustment factor
-    fn get_historical_adjustment(&self, market_id: &str, side: OrderSide, order_size: Decimal) -> Decimal {
+    fn get_historical_adjustment(&self, market_id: &str, side: OrderSide, _order_size: Decimal) -> Decimal {
         let history = self.history.read().unwrap();
         
         // First try market-specific history

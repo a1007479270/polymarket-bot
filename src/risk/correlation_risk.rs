@@ -409,7 +409,7 @@ impl CorrelationRiskManager {
 
         // Perfect diversification = N uncorrelated assets
         // Ratio = 1 / sqrt(sum of weighted correlation^2 + weights^2)
-        let n = Decimal::from(positions.len() as i64);
+        let _n = Decimal::from(positions.len() as i64);
         
         // If no correlation data, assume moderate diversification
         if correlations.is_empty() {

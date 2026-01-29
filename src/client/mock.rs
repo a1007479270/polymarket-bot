@@ -85,7 +85,7 @@ impl MockClobClient {
         }
     }
 
-    pub fn with_balance(mut self, balance: Decimal) -> Self {
+    pub fn with_balance(self, balance: Decimal) -> Self {
         self.state.write().unwrap().balance = balance;
         self
     }

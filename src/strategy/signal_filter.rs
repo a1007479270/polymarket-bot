@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::strategy::trend_detector::{Trend, TrendSignal};
-use crate::types::Signal;
 
 /// Tracks which markets have been traded recently
 pub struct TradeDeduplicator {

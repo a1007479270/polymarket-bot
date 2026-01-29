@@ -2,7 +2,6 @@
 //!
 //! Don't wait for market settlement, sell when price moves in our favor.
 
-use crate::error::Result;
 use crate::types::{Side, Signal};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;

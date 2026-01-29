@@ -6,7 +6,7 @@
 //! - Trade rate limiting
 //! - Full parameter customization
 
-use crate::client::mock::{MockClobClient, MockGammaClient, ClobClientTrait, GammaClientTrait};
+use crate::client::mock::{MockClobClient, MockGammaClient, GammaClientTrait};
 use crate::config::{RiskConfig, StrategyConfig};
 use crate::strategy::SignalGenerator;
 use crate::types::{Market, Side};

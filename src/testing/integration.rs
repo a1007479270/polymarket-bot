@@ -5,7 +5,7 @@
 use crate::client::mock::{MockClobClient, MockGammaClient, MockScenarioBuilder, ClobClientTrait, GammaClientTrait};
 use crate::config::{StrategyConfig, RiskConfig};
 use crate::strategy::SignalGenerator;
-use crate::types::{Market, Signal, Side, Order, OrderType, Outcome};
+use crate::types::{Market, Side, Order, OrderType, Outcome};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::time::Instant;

@@ -131,7 +131,7 @@ impl PriceOptimizer {
     /// Get optimal price for an order
     pub fn optimize(
         &self,
-        market_id: &str,
+        _market_id: &str,
         side: OrderSide,
         order_book: &OrderBook,
         urgency: ExecutionUrgency,
@@ -215,7 +215,7 @@ impl PriceOptimizer {
         &self,
         order_book: &OrderBook,
         side: OrderSide,
-        spread_bps: Decimal,
+        _spread_bps: Decimal,
         imbalance: OrderBookImbalance,
         model_edge: Decimal,
     ) -> PriceRecommendation {
@@ -273,7 +273,7 @@ impl PriceOptimizer {
         order_book: &OrderBook,
         side: OrderSide,
         spread_bps: Decimal,
-        imbalance: OrderBookImbalance,
+        _imbalance: OrderBookImbalance,
     ) -> PriceRecommendation {
         let mid_price = (order_book.best_bid + order_book.best_ask) / dec!(2);
         

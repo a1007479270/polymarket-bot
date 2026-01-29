@@ -501,7 +501,7 @@ impl MarketStateMonitor {
     }
 
     /// Detect anomalies in recent data
-    fn detect_anomalies(&self, market_id: &str, updates: &[&PriceUpdate]) -> Vec<Anomaly> {
+    fn detect_anomalies(&self, _market_id: &str, updates: &[&PriceUpdate]) -> Vec<Anomaly> {
         let mut anomalies = Vec::new();
         
         if updates.len() < 5 {
@@ -661,7 +661,7 @@ impl MarketStateMonitor {
         }
 
         // Adjust for momentum
-        let momentum_warning = if state.momentum.accelerating && state.momentum.price_change_pct.abs() > dec!(5) {
+        let _momentum_warning = if state.momentum.accelerating && state.momentum.price_change_pct.abs() > dec!(5) {
             warnings.push(format!(
                 "Strong momentum detected: {:.1}% - consider waiting",
                 state.momentum.price_change_pct
@@ -672,7 +672,7 @@ impl MarketStateMonitor {
         };
 
         // Adjust for liquidity
-        let liquidity_warning = if state.liquidity_score < dec!(0.3) {
+        let _liquidity_warning = if state.liquidity_score < dec!(0.3) {
             warnings.push("Low liquidity - larger slippage expected".to_string());
             true
         } else {

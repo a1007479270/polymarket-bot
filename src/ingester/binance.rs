@@ -6,7 +6,6 @@ use crate::error::Result;
 use futures_util::StreamExt;
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};

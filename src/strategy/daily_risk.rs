@@ -303,7 +303,7 @@ impl DailyRiskLimiter {
         self.maybe_reset();
 
         let daily_pnl = *self.daily_pnl.read().unwrap();
-        let starting = *self.starting_balance.read().unwrap();
+        let _starting = *self.starting_balance.read().unwrap();
         let positions = self.open_positions.read().unwrap();
 
         // Calculate category exposures

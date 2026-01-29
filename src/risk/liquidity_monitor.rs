@@ -6,7 +6,7 @@
 //! - Slippage estimation
 //! - Liquidity score calculation for position sizing
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::{HashMap, VecDeque};

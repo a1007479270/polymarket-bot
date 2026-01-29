@@ -218,7 +218,7 @@ impl RiskManager {
 
     /// Get comprehensive risk state
     pub fn get_risk_state(&self, current_positions: &[Position], balance: Decimal) -> RiskState {
-        let position_infos: Vec<PositionInfo> = current_positions
+        let _position_infos: Vec<PositionInfo> = current_positions
             .iter()
             .map(|p| PositionInfo {
                 market_id: p.market_id.clone(),

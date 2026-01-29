@@ -236,7 +236,7 @@ impl SignalAggregator {
     }
 
     /// Aggregate multiple signals into a decision
-    pub fn aggregate(&self, market_id: &str, signals: &[SignalSource]) -> AggregatedDecision {
+    pub fn aggregate(&self, _market_id: &str, signals: &[SignalSource]) -> AggregatedDecision {
         let now = Utc::now();
         let mut reasons = Vec::new();
 
