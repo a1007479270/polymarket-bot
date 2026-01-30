@@ -2,7 +2,7 @@
 //! Real-time price streaming for BTC, ETH, SOL, XRP
 
 use polymarket_bot::client::GammaClient;
-use polymarket_bot::paper::{PaperTrader, PaperTraderConfig, PositionSide};
+use polymarket_bot::paper::{PaperTrader, PaperTraderConfig, PositionSide, LlmTrader, PositionContext, MarketContext, TradeDecision};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -64,6 +64,12 @@ async fn main() -> anyhow::Result<()> {
     let trader = Arc::new(PaperTrader::new(config, gamma.clone()));
     let state = Arc::new(RwLock::new(PriceState::default()));
     
+    // LLM Trader for intelligent decisions (optional)
+    let llm_trader = std::env::var("DEEPSEEK_API_KEY").ok().map(|key| {
+        info!("🤖 LLM trading decisions enabled");
+        Arc::new(LlmTrader::new(key))
+    });
+    
     info!("🚀 Multi-Asset 15m Trading with WebSocket Feed");
     info!("💰 Initial balance: $1000");
     
@@ -75,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
     
     // Main trading loop - check every 2 seconds (WebSocket updates prices continuously)
     let mut last_slot: u64 = 0;
+    let mut last_llm_check: u64 = 0;
     
     loop {
         let prices = {
@@ -83,12 +90,131 @@ async fn main() -> anyhow::Result<()> {
         };
         
         if !prices.is_empty() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            
+            // LLM decision every 30 seconds
+            if let Some(ref llm) = llm_trader {
+                if now - last_llm_check >= 30 {
+                    last_llm_check = now;
+                    llm_decide(&trader, llm, &state, &prices).await;
+                }
+            }
+            
             if let Err(e) = trade_loop(&trader, &state, &prices, &mut last_slot).await {
                 error!("Trade loop error: {}", e);
             }
         }
         
         sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// LLM-powered trading decision
+async fn llm_decide(
+    trader: &Arc<PaperTrader>,
+    llm: &Arc<LlmTrader>,
+    state: &Arc<RwLock<PriceState>>,
+    prices: &HashMap<String, f64>,
+) {
+    let positions = trader.get_positions().await;
+    let open_positions: Vec<_> = positions.iter().filter(|p| p.is_open()).collect();
+    
+    if open_positions.is_empty() {
+        return; // No positions to evaluate
+    }
+    
+    // Build position context
+    let pos_ctx: Vec<PositionContext> = open_positions.iter().map(|p| {
+        let entry_price = (p.cost_basis / p.shares).to_string().parse::<f64>().unwrap_or(0.5);
+        let current_price = p.current_price.to_string().parse::<f64>().unwrap_or(0.5);
+        let pnl_pct = if entry_price > 0.0 {
+            (current_price - entry_price) / entry_price * 100.0
+        } else {
+            0.0
+        };
+        
+        PositionContext {
+            asset: p.market_id.split('-').next().unwrap_or("").to_uppercase(),
+            side: if p.market_id.contains("-up") { "UP".to_string() } else { "DOWN".to_string() },
+            entry_price,
+            current_price,
+            unrealized_pnl_pct: pnl_pct,
+            shares: p.shares.to_string().parse().unwrap_or(0.0),
+            cost_basis: p.cost_basis.to_string().parse().unwrap_or(0.0),
+            current_value: p.current_value.to_string().parse().unwrap_or(0.0),
+        }
+    }).collect();
+    
+    // Build market context
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let time_in_slot = now % 900;
+    
+    let mkt_ctx: Vec<MarketContext> = {
+        let s = state.read().await;
+        let default_trend = (0.0, Vec::new());
+        ASSETS.iter().filter_map(|a| {
+            let sym = a.binance.to_uppercase();
+            let price = prices.get(&sym)?;
+            let (change, _) = s.trends.get(&sym).unwrap_or(&default_trend);
+            let change_val = *change;
+            Some(MarketContext {
+                asset: a.name.to_string(),
+                binance_price: *price,
+                binance_24h_change: change_val,
+                poly_up_price: 0.5, // Would need to fetch
+                poly_down_price: 0.5,
+                window_seconds_remaining: 900 - time_in_slot,
+                trend_direction: if change_val > 0.05 { "UP".to_string() } 
+                    else if change_val < -0.05 { "DOWN".to_string() } 
+                    else { "FLAT".to_string() },
+            })
+        }).collect()
+    };
+    
+    let balance = trader.get_balance().await.to_string().parse().unwrap_or(1000.0);
+    
+    info!("🤖 Consulting LLM for {} positions...", pos_ctx.len());
+    
+    match llm.decide(&pos_ctx, &mkt_ctx, balance).await {
+        Ok(decisions) => {
+            for decision in decisions {
+                match decision {
+                    TradeDecision::Sell { position_id, reason } => {
+                        // Find matching position
+                        for pos in &positions {
+                            if pos.is_open() && pos.market_id.to_lowercase().contains(&position_id.to_lowercase()) {
+                                info!("🤖 LLM决策: 卖出 {} - {}", position_id, reason);
+                                if let Err(e) = trader.sell(&pos.id, format!("LLM: {}", reason)).await {
+                                    warn!("卖出失败: {}", e);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    TradeDecision::SellAll { reason } => {
+                        info!("🤖 LLM决策: 全部卖出 - {}", reason);
+                        for pos in &positions {
+                            if pos.is_open() {
+                                let _ = trader.sell(&pos.id, format!("LLM: {}", reason)).await;
+                            }
+                        }
+                    }
+                    TradeDecision::Hold => {
+                        info!("🤖 LLM决策: 持有");
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Err(e) => {
+            warn!("LLM决策失败: {}", e);
+        }
     }
 }
 
@@ -167,9 +293,16 @@ async fn trade_loop(
     let current_slot = now - (now % 900);
     let time_in_slot = now % 900;
     
-    // New window detection
+    // New window detection + settle previous window
     if current_slot != *last_slot {
+        let prev_slot = *last_slot;
         *last_slot = current_slot;
+        
+        // Settle previous window positions if any
+        if prev_slot > 0 {
+            settle_previous_window(trader, &client, prev_slot).await;
+        }
+        
         let price_str: String = ASSETS.iter()
             .filter_map(|a| {
                 let sym = a.binance.to_uppercase();
@@ -260,6 +393,56 @@ async fn trade_loop(
     );
     
     Ok(())
+}
+
+/// Settle positions from previous window by fetching actual results
+async fn settle_previous_window(
+    trader: &Arc<PaperTrader>,
+    client: &reqwest::Client,
+    prev_slot: u64,
+) {
+    info!("📊 Settling positions from slot {}", prev_slot);
+    
+    for asset in ASSETS {
+        let market_slug = format!("{}-{}", asset.poly_slug, prev_slot);
+        let url = format!("https://gamma-api.polymarket.com/events?slug={}", market_slug);
+        
+        let resp: Vec<serde_json::Value> = match client.get(&url).send().await {
+            Ok(r) => r.json().await.unwrap_or_default(),
+            Err(_) => continue,
+        };
+        
+        if let Some(event) = resp.first() {
+            // Check if market is closed/resolved
+            let closed = event["closed"].as_bool().unwrap_or(false);
+            
+            if closed {
+                if let Some(market) = event["markets"].as_array().and_then(|m| m.first()) {
+                    // Get winning outcome - check outcomePrices (winner = 1.0)
+                    if let Some(prices_str) = market["outcomePrices"].as_str() {
+                        let p: Vec<&str> = prices_str.trim_matches(|c| c == '[' || c == ']' || c == '"')
+                            .split("\", \"").collect();
+                        
+                        if p.len() >= 2 {
+                            let up_price: f64 = p[0].parse().unwrap_or(0.5);
+                            let up_won = up_price > 0.9; // If UP price is ~1.0, UP won
+                            
+                            // Settle this asset's positions
+                            let market_id_pattern = format!("{}-15m-{}", asset.name.to_lowercase(), prev_slot);
+                            if let Ok(trades) = trader.settle_market(&market_id_pattern, up_won).await {
+                                for trade in trades {
+                                    let pnl = trade.pnl.unwrap_or(dec!(0));
+                                    info!("📋 {} settled: {} ${:.2}", asset.name, trade.reason, pnl);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                info!("⏳ {} market not yet closed", asset.name);
+            }
+        }
+    }
 }
 
 async fn trade_asset(

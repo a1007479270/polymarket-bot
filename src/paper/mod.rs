@@ -6,10 +6,12 @@
 mod position;
 mod trader;
 mod evaluator;
+mod llm_trader;
 
 pub use position::{Position, PositionSide, PositionStatus};
 pub use trader::{PaperTrader, PaperTraderConfig, TradeRecord, TradeAction};
 pub use evaluator::{MarketEvaluator, EvaluationResult, ConfidenceLevel};
+pub use llm_trader::{LlmTrader, TradeDecision, PositionContext, MarketContext};
 
 use rust_decimal::Decimal;
 use chrono::{DateTime, Utc};

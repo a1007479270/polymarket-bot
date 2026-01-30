@@ -421,6 +421,104 @@ impl PaperTrader {
             .map(|p| p.current_value)
             .sum()
     }
+
+    /// Settle positions when market resolves
+    /// winning_side: true = YES/UP won, false = NO/DOWN won
+    pub async fn settle_market(&self, market_id: &str, winning_side: bool) -> Result<Vec<TradeRecord>> {
+        let mut state = self.state.write().await;
+        let mut settled_trades = Vec::new();
+
+        // Find all open positions for this market
+        let position_indices: Vec<usize> = state.positions.iter()
+            .enumerate()
+            .filter(|(_, p)| p.market_id.contains(market_id) && p.is_open())
+            .map(|(i, _)| i)
+            .collect();
+
+        for idx in position_indices {
+            let position = &state.positions[idx];
+            let pos_id = position.id.clone();
+            let pos_market_id = position.market_id.clone();
+            let question = position.question.clone();
+            let side = position.side;
+            let shares = position.shares;
+            let cost_basis = position.cost_basis;
+
+            // Determine if this position won
+            let position_won = match side {
+                PositionSide::Yes => winning_side,  // YES wins if winning_side is true
+                PositionSide::No => !winning_side,  // NO wins if winning_side is false
+            };
+
+            // Settlement price: $1.00 if won, $0.00 if lost
+            let settlement_price = if position_won { dec!(1.0) } else { dec!(0.0) };
+            let proceeds = shares * settlement_price;
+            let pnl = proceeds - cost_basis;
+
+            // Close position
+            state.positions[idx].close(settlement_price, format!("Market settled: {} won", if winning_side { "UP" } else { "DOWN" }));
+
+            // Update cash
+            state.cash_balance += proceeds;
+
+            // Record settlement
+            let trade = TradeRecord {
+                id: format!("{}_settle", pos_id),
+                market_id: pos_market_id,
+                question,
+                side,
+                action: TradeAction::Sell,
+                shares,
+                price: settlement_price,
+                total_value: proceeds,
+                pnl: Some(pnl),
+                timestamp: Utc::now(),
+                reason: format!("Settlement: {} {}", if position_won { "WON" } else { "LOST" }, if winning_side { "UP" } else { "DOWN" }),
+            };
+
+            let emoji = if pnl >= dec!(0) { "🎉" } else { "💀" };
+            info!(
+                "{} SETTLED: {} {} @ ${:.2} | PnL: ${:.2}",
+                emoji, shares.round_dp(2), side, settlement_price, pnl
+            );
+
+            state.trade_history.push(trade.clone());
+            settled_trades.push(trade);
+        }
+
+        state.updated_at = Utc::now();
+        Ok(settled_trades)
+    }
+
+    /// Check and settle expired positions by market slot
+    pub async fn settle_expired_positions(&self, current_slot: u64) -> Result<Vec<TradeRecord>> {
+        let state = self.state.read().await;
+        let mut all_settled = Vec::new();
+
+        // Find positions from previous slots
+        let expired_markets: Vec<String> = state.positions.iter()
+            .filter(|p| p.is_open())
+            .filter(|p| {
+                // Extract slot from market_id (format: "btc-15m-{slot}-up/down")
+                p.market_id.split('-')
+                    .find(|s| s.parse::<u64>().is_ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(|slot| slot < current_slot)
+                    .unwrap_or(false)
+            })
+            .map(|p| p.market_id.clone())
+            .collect();
+
+        drop(state); // Release read lock before settling
+
+        for market_id in expired_markets {
+            // For now, assume we need to fetch the actual result
+            // This would need integration with Polymarket resolution data
+            info!("⏰ Found expired position: {}", market_id);
+        }
+
+        Ok(all_settled)
+    }
 }
 
 #[cfg(test)]
