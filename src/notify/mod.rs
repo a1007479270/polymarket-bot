@@ -222,6 +222,93 @@ impl Notifier {
 
         self.send(&text).await
     }
+
+    /// Notify about arbitrage opportunity found
+    pub async fn arbitrage_found(
+        &self,
+        market: &str,
+        yes_price: Decimal,
+        no_price: Decimal,
+        spread: Decimal,
+        profit: Decimal,
+    ) -> Result<()> {
+        let text = format!(
+            "🎯 <b>Arbitrage Found</b>\n\n\
+            Market: {}\n\
+            YES: ${:.3} | NO: ${:.3}\n\
+            Spread: {:.2}%\n\
+            Est. Profit: ${:.4}",
+            truncate(market, 50),
+            yes_price,
+            no_price,
+            spread * Decimal::from(100),
+            profit,
+        );
+
+        self.send(&text).await
+    }
+
+    /// Notify about arbitrage execution result
+    pub async fn arbitrage_executed(
+        &self,
+        market: &str,
+        success: bool,
+        profit: Option<Decimal>,
+        latency_ms: u64,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let status = if success { "✅ SUCCESS" } else { "❌ FAILED" };
+        
+        let profit_text = profit
+            .map(|p| format!("${:.4}", p))
+            .unwrap_or_else(|| "-".to_string());
+
+        let error_text = error
+            .map(|e| format!("\nError: {}", e))
+            .unwrap_or_default();
+
+        let text = format!(
+            "⚡ <b>Arbitrage Executed</b>\n\n\
+            Status: {}\n\
+            Market: {}\n\
+            Profit: {}\n\
+            Latency: {}ms{}",
+            status,
+            truncate(market, 40),
+            profit_text,
+            latency_ms,
+            error_text,
+        );
+
+        self.send(&text).await
+    }
+
+    /// Send crypto 15m market status update
+    pub async fn crypto_status(
+        &self,
+        symbol: &str,
+        up_price: Decimal,
+        down_price: Decimal,
+        spread: Decimal,
+        signal: &str,
+    ) -> Result<()> {
+        let spread_emoji = if spread > Decimal::from(0) { "🟢" } else { "🔴" };
+        
+        let text = format!(
+            "{} <b>{} 15m Status</b>\n\n\
+            UP: ${:.3} | DOWN: ${:.3}\n\
+            Spread: {:.2}%\n\
+            Signal: {}",
+            spread_emoji,
+            symbol,
+            up_price,
+            down_price,
+            spread * Decimal::from(100),
+            signal,
+        );
+
+        self.send(&text).await
+    }
 }
 
 fn truncate(s: &str, max_len: usize) -> String {
