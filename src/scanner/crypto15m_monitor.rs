@@ -11,7 +11,7 @@
 
 use super::crypto_market::{CryptoMarket, CryptoMarketDiscovery, MarketInterval};
 use super::indicators::{RSI, StochRSI, StochRSIResult, SignalType, SpikeDetector, SpikeConfig, analyze_signal};
-use crate::client::{MarketStream, MarketUpdate};
+use crate::client::MarketUpdate;
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;

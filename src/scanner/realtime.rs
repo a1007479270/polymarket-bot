@@ -3,7 +3,7 @@
 //! Monitors price changes and immediately checks for arbitrage opportunities.
 
 use super::{ArbitrageOpp, OpportunitySender, ScannerConfig};
-use crate::client::{MarketStream, MarketUpdate};
+use crate::client::{PriceStream, MarketUpdate};
 use crate::error::Result;
 use chrono::Utc;
 use rust_decimal::Decimal;
@@ -85,7 +85,7 @@ impl RealtimeArbitrageScanner {
     }
 
     /// Start processing price updates from WebSocket
-    pub async fn start(&self, mut stream: MarketStream) -> Result<()> {
+    pub async fn start(&self, mut stream: PriceStream) -> Result<()> {
         {
             let mut running = self.running.write().await;
             if *running {
