@@ -29,6 +29,7 @@ pub mod model;
 pub mod monitor;
 pub mod notify;
 pub mod onchain;
+pub mod paper;
 pub mod orderbook;
 pub mod portfolio;
 pub mod regime;
