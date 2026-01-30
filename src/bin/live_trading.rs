@@ -5,7 +5,8 @@
 //!
 //! Key features:
 //! - Dynamic market discovery via search_crypto_hourly_markets()
-//! - Binance 1H kline integration for predictions
+//! - ML-based multi-factor prediction (technical + sentiment + orderbook)
+//! - Binance kline integration for feature extraction
 //! - Risk-controlled position sizing
 //! - Real-time logging
 
@@ -20,6 +21,7 @@ use tracing_subscriber;
 
 use polymarket_bot::client::gamma::GammaClient;
 use polymarket_bot::types::Market;
+use polymarket_bot::ml::predictor::{MLPredictor, MLPredictorConfig, MarketDataInput, KlineData};
 
 const GAMMA_API_URL: &str = "https://gamma-api.polymarket.com";
 const BINANCE_API_URL: &str = "https://api.binance.com";
@@ -81,6 +83,13 @@ struct BinanceKline {
     close_time: i64,
 }
 
+/// Extended Binance data with klines for ML features
+#[derive(Debug, Clone)]
+struct ExtendedBinanceData {
+    pub context: BinanceContext,
+    pub klines: Vec<KlineData>,
+}
+
 /// Live trader state
 struct LiveTrader {
     gamma: GammaClient,
@@ -90,6 +99,7 @@ struct LiveTrader {
     hourly_trade_count: u32,
     last_hour_reset: DateTime<Utc>,
     log_file: File,
+    ml_predictor: MLPredictor,
 }
 
 impl LiveTrader {
@@ -103,7 +113,12 @@ impl LiveTrader {
         let log_path = format!("logs/live_trading_{}.jsonl", Utc::now().format("%Y%m%d_%H%M%S"));
         let log_file = File::create(&log_path)?;
 
+        // Initialize ML Predictor with default configuration
+        let ml_config = MLPredictorConfig::default();
+        let ml_predictor = MLPredictor::new(ml_config);
+
         info!("📁 Log file: {}", log_path);
+        info!("🤖 ML Predictor initialized with multi-factor fusion");
 
         Ok(Self {
             gamma,
@@ -113,6 +128,7 @@ impl LiveTrader {
             hourly_trade_count: 0,
             last_hour_reset: Utc::now(),
             log_file,
+            ml_predictor,
         })
     }
 
@@ -231,8 +247,37 @@ impl LiveTrader {
         }
     }
 
-    /// Generate prediction for a market
-    fn predict(&self, market: &Market, binance: &BinanceContext) -> (String, f64, f64) {
+    /// Get extended Binance data with klines for ML features
+    async fn get_extended_binance_data(&self, symbol: &str) -> anyhow::Result<ExtendedBinanceData> {
+        // Get basic context
+        let context = self.get_binance_data(symbol).await?;
+
+        // Get 50 hourly klines for comprehensive technical analysis
+        let klines_url = format!(
+            "{}/api/v3/klines?symbol={}&interval=1h&limit=50",
+            BINANCE_API_URL, symbol
+        );
+        let raw_klines: Vec<Vec<serde_json::Value>> = 
+            self.http.get(&klines_url).send().await?.json().await?;
+
+        // Convert to KlineData format for ML predictor
+        let klines: Vec<KlineData> = raw_klines
+            .iter()
+            .map(|k| KlineData {
+                timestamp: k[0].as_i64().unwrap_or(0),
+                open: k[1].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0),
+                high: k[2].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0),
+                low: k[3].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0),
+                close: k[4].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0),
+                volume: k[5].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0),
+            })
+            .collect();
+
+        Ok(ExtendedBinanceData { context, klines })
+    }
+
+    /// Generate ML-based prediction for a market (multi-factor fusion)
+    fn predict(&self, market: &Market, extended_data: &ExtendedBinanceData) -> (String, f64, f64) {
         // Get current Yes/No prices
         let yes_price = market
             .outcomes
@@ -241,16 +286,55 @@ impl LiveTrader {
             .map(|o| o.price.to_string().parse::<f64>().unwrap_or(0.5))
             .unwrap_or(0.5);
 
-        let no_price = 1.0 - yes_price;
+        // Build MarketDataInput for ML predictor
+        let market_data = MarketDataInput {
+            symbol: extended_data.context.symbol.clone(),
+            price: extended_data.context.current_price,
+            klines: extended_data.klines.clone(),
+            orderbook_imbalance: None, // TODO: integrate order book data
+            volume_24h: extended_data.context.volume_24h,
+            sentiment_score: None, // TODO: integrate Twitter/social sentiment
+            question: market.question.clone(),
+        };
 
-        // Simple momentum-based prediction
+        // Run ML prediction with multi-factor fusion
+        let ml_result = self.ml_predictor.predict(&market_data, yes_price);
+
+        debug!(
+            "ML Prediction: up_prob={:.3}, confidence={:.3}, edge={:.3}, agreement={:.3}",
+            ml_result.up_probability,
+            ml_result.confidence,
+            ml_result.edge,
+            ml_result.model_agreement
+        );
+        debug!(
+            "Features: RSI={:.1}, MACD={:.3}, BB={:.2}, ADX={:.1}, momentum={:.3}",
+            ml_result.features.rsi,
+            ml_result.features.macd_signal,
+            ml_result.features.bollinger_position,
+            ml_result.features.adx,
+            ml_result.features.momentum_1h
+        );
+
+        (ml_result.recommended_side, ml_result.up_probability, ml_result.edge)
+    }
+
+    /// Legacy simple prediction (fallback)
+    #[allow(dead_code)]
+    fn predict_simple(&self, market: &Market, binance: &BinanceContext) -> (String, f64, f64) {
+        let yes_price = market
+            .outcomes
+            .iter()
+            .find(|o| o.outcome.to_lowercase() == "yes")
+            .map(|o| o.price.to_string().parse::<f64>().unwrap_or(0.5))
+            .unwrap_or(0.5);
+
+        let no_price = 1.0 - yes_price;
         let momentum = binance.price_change_1h_pct;
         let rsi = binance.rsi_14.unwrap_or(50.0);
 
-        // Calculate predicted probability of "Up"
         let mut up_prob: f64 = 0.5;
 
-        // Momentum factor
         if momentum > 0.5 {
             up_prob += 0.1;
         } else if momentum > 0.2 {
@@ -261,17 +345,14 @@ impl LiveTrader {
             up_prob -= 0.05;
         }
 
-        // RSI factor (mean reversion at extremes)
         if rsi > 70.0 {
-            up_prob -= 0.08; // Overbought, expect pullback
+            up_prob -= 0.08;
         } else if rsi < 30.0 {
-            up_prob += 0.08; // Oversold, expect bounce
+            up_prob += 0.08;
         }
 
-        // Clamp probability
         up_prob = up_prob.clamp(0.2, 0.8);
 
-        // Determine prediction
         let question = market.question.to_lowercase();
         let (predicted_side, fair_prob, market_price) = if question.contains("go up") {
             if up_prob > 0.5 {
@@ -286,7 +367,6 @@ impl LiveTrader {
                 ("No", up_prob, no_price)
             }
         } else {
-            // Default: assume "up or down" with Yes=Up
             if up_prob > 0.5 {
                 ("Yes", up_prob, yes_price)
             } else {
@@ -294,9 +374,7 @@ impl LiveTrader {
             }
         };
 
-        // Calculate edge
         let edge = fair_prob - market_price;
-
         (predicted_side.to_string(), fair_prob, edge)
     }
 
@@ -409,7 +487,7 @@ impl LiveTrader {
             self.log(&format!("   Found {} crypto markets", markets.len()));
 
             // Filter by liquidity and find opportunities
-            let mut opportunities: Vec<(Market, String, f64, f64, BinanceContext)> = Vec::new();
+            let mut opportunities: Vec<(Market, String, f64, f64, ExtendedBinanceData)> = Vec::new();
 
             for market in &markets {
                 // Skip markets not settling soon (within MAX_SETTLEMENT_MINUTES)
@@ -444,8 +522,8 @@ impl LiveTrader {
                     None => continue,
                 };
 
-                // Get Binance data
-                let binance = match self.get_binance_data(symbol).await {
+                // Get extended Binance data (with klines for ML features)
+                let extended_data = match self.get_extended_binance_data(symbol).await {
                     Ok(b) => b,
                     Err(e) => {
                         debug!("Binance error for {}: {}", symbol, e);
@@ -453,12 +531,12 @@ impl LiveTrader {
                     }
                 };
 
-                // Get prediction
-                let (side, confidence, edge) = self.predict(&market, &binance);
+                // Get ML prediction (multi-factor fusion)
+                let (side, confidence, edge) = self.predict(&market, &extended_data);
 
                 // Check edge
                 if edge >= MIN_EDGE {
-                    opportunities.push((market.clone(), side, confidence, edge, binance));
+                    opportunities.push((market.clone(), side, confidence, edge, extended_data));
                 }
             }
 
@@ -471,7 +549,7 @@ impl LiveTrader {
             opportunities.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
 
             // Take best opportunity
-            let (market, side, confidence, edge, binance) = &opportunities[0];
+            let (market, side, confidence, edge, extended_data) = &opportunities[0];
             let position_size = self.calculate_position_size(*edge, *confidence);
 
             if position_size < 1.0 {
@@ -482,14 +560,14 @@ impl LiveTrader {
                 continue;
             }
 
-            // Execute trade
+            // Execute trade (use context for BinanceContext)
             let trade = self.execute_trade(
                 market,
                 side,
                 position_size,
                 side,
                 *confidence,
-                binance,
+                &extended_data.context,
             );
 
             self.log("═══════════════════════════════════════════════════════════");
@@ -500,10 +578,10 @@ impl LiveTrader {
             self.log(&format!("   Edge: {:.1}% | Confidence: {:.1}%", edge * 100.0, confidence * 100.0));
             self.log(&format!(
                 "   Binance: {} @ ${:.2} (1H: {:+.2}%, RSI: {:.1})",
-                binance.symbol,
-                binance.current_price,
-                binance.price_change_1h_pct,
-                binance.rsi_14.unwrap_or(50.0)
+                extended_data.context.symbol,
+                extended_data.context.current_price,
+                extended_data.context.price_change_1h_pct,
+                extended_data.context.rsi_14.unwrap_or(50.0)
             ));
             self.log(&format!("   Remaining Capital: ${:.2}", self.capital));
             self.log("═══════════════════════════════════════════════════════════");
@@ -541,9 +619,9 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_binance_symbol_mapping() {
-        let trader = LiveTrader {
+    /// Helper to create a test trader with ML predictor
+    fn create_test_trader() -> LiveTrader {
+        LiveTrader {
             gamma: GammaClient::new("http://test").unwrap(),
             http: Client::new(),
             capital: 100.0,
@@ -551,7 +629,13 @@ mod tests {
             hourly_trade_count: 0,
             last_hour_reset: Utc::now(),
             log_file: File::create("/dev/null").unwrap(),
-        };
+            ml_predictor: MLPredictor::new(MLPredictorConfig::default()),
+        }
+    }
+
+    #[test]
+    fn test_binance_symbol_mapping() {
+        let trader = create_test_trader();
 
         assert_eq!(trader.get_binance_symbol("Will Bitcoin go up?"), Some("BTCUSDT"));
         assert_eq!(trader.get_binance_symbol("ETH price prediction"), Some("ETHUSDT"));
@@ -562,15 +646,7 @@ mod tests {
 
     #[test]
     fn test_position_size_calculation() {
-        let trader = LiveTrader {
-            gamma: GammaClient::new("http://test").unwrap(),
-            http: Client::new(),
-            capital: 100.0,
-            trades: vec![],
-            hourly_trade_count: 0,
-            last_hour_reset: Utc::now(),
-            log_file: File::create("/dev/null").unwrap(),
-        };
+        let trader = create_test_trader();
 
         // Positive edge should give positive position
         let pos = trader.calculate_position_size(0.05, 0.6);
@@ -588,15 +664,7 @@ mod tests {
 
     #[test]
     fn test_hourly_limit() {
-        let mut trader = LiveTrader {
-            gamma: GammaClient::new("http://test").unwrap(),
-            http: Client::new(),
-            capital: 100.0,
-            trades: vec![],
-            hourly_trade_count: 0,
-            last_hour_reset: Utc::now(),
-            log_file: File::create("/dev/null").unwrap(),
-        };
+        let mut trader = create_test_trader();
 
         // Should be under limit initially
         assert!(trader.check_hourly_limit());
@@ -609,5 +677,68 @@ mod tests {
         trader.last_hour_reset = Utc::now() - Duration::hours(2);
         assert!(trader.check_hourly_limit());
         assert_eq!(trader.hourly_trade_count, 0); // Should reset
+    }
+
+    #[test]
+    fn test_ml_predictor_integration() {
+        let trader = create_test_trader();
+
+        // Create mock extended data
+        let klines: Vec<KlineData> = (0..50)
+            .map(|i| KlineData {
+                timestamp: 1706572800000 + i * 3600000, // hourly intervals
+                open: 85000.0 + (i as f64) * 10.0,
+                high: 85100.0 + (i as f64) * 10.0,
+                low: 84900.0 + (i as f64) * 10.0,
+                close: 85050.0 + (i as f64) * 10.0,
+                volume: 1000.0,
+            })
+            .collect();
+
+        let extended_data = ExtendedBinanceData {
+            context: BinanceContext {
+                symbol: "BTCUSDT".to_string(),
+                current_price: 85500.0,
+                price_change_1h_pct: 0.5,
+                volume_24h: 1_000_000.0,
+                rsi_14: Some(55.0),
+            },
+            klines,
+        };
+
+        // Create a mock market
+        use rust_decimal::Decimal;
+        use polymarket_bot::types::Outcome;
+        let market = Market {
+            id: "test-market-id".to_string(),
+            question: "Will Bitcoin go up?".to_string(),
+            description: Some("Test market".to_string()),
+            outcomes: vec![
+                Outcome {
+                    token_id: "yes-token-123".to_string(),
+                    outcome: "Yes".to_string(),
+                    price: Decimal::from_str_exact("0.50").unwrap(),
+                },
+                Outcome {
+                    token_id: "no-token-456".to_string(),
+                    outcome: "No".to_string(),
+                    price: Decimal::from_str_exact("0.50").unwrap(),
+                },
+            ],
+            liquidity: Decimal::from_str_exact("10000").unwrap(),
+            volume: Decimal::from_str_exact("50000").unwrap(),
+            end_date: Some(Utc::now() + Duration::hours(1)),
+            active: true,
+            closed: false,
+        };
+
+        // Run ML prediction
+        let (side, prob, edge) = trader.predict(&market, &extended_data);
+
+        // Basic sanity checks
+        assert!(side == "Yes" || side == "No");
+        assert!(prob >= 0.0 && prob <= 1.0);
+        // Edge can be positive or negative
+        println!("ML Prediction: side={}, prob={:.3}, edge={:.3}", side, prob, edge);
     }
 }
