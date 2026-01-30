@@ -34,6 +34,7 @@ pub mod portfolio;
 pub mod regime;
 pub mod risk;
 pub mod routing;
+pub mod scanner;
 pub mod sentiment;
 pub mod signal_decay;
 pub mod stat_arb;
