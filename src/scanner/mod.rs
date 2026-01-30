@@ -3,6 +3,7 @@
 //! Background service that continuously scans markets for arbitrage opportunities.
 //! Ported from Go implementation.
 
+mod arbitrage_loop;
 mod continuous;
 mod crypto_market;
 mod crypto15m_monitor;
@@ -10,6 +11,7 @@ mod indicators;
 mod negative_risk;
 mod realtime;
 
+pub use arbitrage_loop::{ArbitrageLoop, ArbitrageLoopConfig, LoopStats};
 pub use continuous::ContinuousScanner;
 pub use crypto_market::{
     CryptoMarket, CryptoMarketDiscovery, MarketInterval, 
